@@ -30,14 +30,25 @@ from dotenv import load_dotenv
 # Try to load from .env file (for local development)
 load_dotenv()
 
-# Check for API key in Streamlit secrets first, then fall back to environment variable
-api_key = st.secrets.get("OPENAI_API_KEY", None) if hasattr(st, "secrets") else None
-if api_key is None:
-    api_key = os.getenv("OPENAI_API_KEY")
+# Function to get API key and initialize client
+def get_openai_client():
+    # Check for API key in Streamlit secrets first
+    api_key = None
+    if hasattr(st, "secrets") and "OPENAI_API_KEY" in st.secrets:
+        api_key = st.secrets["OPENAI_API_KEY"]
+    else:
+        # Fall back to environment variable
+        api_key = os.getenv("OPENAI_API_KEY")
+    
+    if not api_key:
+        st.error("OpenAI API key not found. Please configure it in Streamlit secrets.")
+        st.stop()
+    
+    # Return initialized client
+    return AsyncOpenAI(api_key=api_key)
 
-if not api_key:
-    st.error("OpenAI API key not found. Add it to .env as OPENAI_API_KEY=your‑key‑here or set it in Streamlit secrets")
-    st.stop()
+# Initialize client for this session
+client = get_openai_client()
 
 st.set_page_config(page_title="CBT Therapist Trainer", page_icon="🧑‍⚕️")
 
@@ -181,8 +192,6 @@ def screen_patient_details():
         st.rerun()
 
 # --------------------------- Helpers for OpenAI ---------------------------
-
-client = AsyncOpenAI(api_key=api_key)
 
 def format_history(markdown: bool = True) -> str:
     """Return chat history as plain or markdown string."""
