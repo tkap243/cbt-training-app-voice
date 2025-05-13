@@ -27,11 +27,16 @@ import os
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
+# Try to load from .env file (for local development)
 load_dotenv()
-api_key = os.getenv("OPENAI_API_KEY")
+
+# Check for API key in Streamlit secrets first, then fall back to environment variable
+api_key = st.secrets.get("OPENAI_API_KEY", None) if hasattr(st, "secrets") else None
+if api_key is None:
+    api_key = os.getenv("OPENAI_API_KEY")
 
 if not api_key:
-    st.error("OpenAI API key not found. Add it to .env as OPENAI_API_KEY=your‑key‑here")
+    st.error("OpenAI API key not found. Add it to .env as OPENAI_API_KEY=your‑key‑here or set it in Streamlit secrets")
     st.stop()
 
 st.set_page_config(page_title="CBT Therapist Trainer", page_icon="🧑‍⚕️")
