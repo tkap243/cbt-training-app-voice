@@ -34,10 +34,17 @@ load_dotenv()
 def get_openai_client():
     # Check for API key in Streamlit secrets first
     api_key = None
-    if hasattr(st, "secrets") and "OPENAI_API_KEY" in st.secrets:
-        api_key = st.secrets["OPENAI_API_KEY"]
-    else:
-        # Fall back to environment variable
+    if hasattr(st, "secrets"):
+        # Try different possible formats
+        if "OPENAI_API_KEY" in st.secrets:
+            api_key = st.secrets["OPENAI_API_KEY"]
+        elif "openai_api_key" in st.secrets:
+            api_key = st.secrets["openai_api_key"]
+        elif "openai" in st.secrets and "api_key" in st.secrets["openai"]:
+            api_key = st.secrets["openai"]["api_key"]
+    
+    # Fall back to environment variable if not found in secrets
+    if not api_key:
         api_key = os.getenv("OPENAI_API_KEY")
     
     if not api_key:
@@ -48,7 +55,11 @@ def get_openai_client():
     return AsyncOpenAI(api_key=api_key)
 
 # Initialize client for this session
-client = get_openai_client()
+try:
+    client = get_openai_client()
+except Exception as e:
+    st.error(f"Error initializing OpenAI client: {str(e)}")
+    st.stop()
 
 st.set_page_config(page_title="CBT Therapist Trainer", page_icon="🧑‍⚕️")
 
@@ -206,12 +217,22 @@ def format_history(markdown: bool = True) -> str:
 # --------------------------- Screen: Training Session ---------------------------
 
 async def get_assistant_response(system_prompt: str):
-    resp = await client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "system", "content": system_prompt}] + st.session_state.history,
-        stream=False,
-    )
-    return resp.choices[0].message.content
+    try:
+        # Get a fresh client for this API call
+        fresh_client = get_openai_client()
+        
+        resp = await fresh_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "system", "content": system_prompt}] + st.session_state.history,
+            stream=False,
+        )
+        return resp.choices[0].message.content
+    except Exception as e:
+        error_msg = str(e)
+        st.error(f"OpenAI API Error: {error_msg}")
+        # Log the full error for debugging (only visible in Streamlit logs)
+        print(f"OpenAI API Error: {error_msg}")
+        return "I'm sorry, there was an error connecting to the AI service. Please try again or contact the app administrator."
 
 async def run_chat_loop():
     cfg = st.session_state.config
@@ -252,7 +273,11 @@ def screen_training_session():
     st.title("Training session")
     st.caption("Therapy simulation using GPT‑4o")
 
-    asyncio.run(run_chat_loop())
+    try:
+        asyncio.run(run_chat_loop())
+    except Exception as e:
+        st.error(f"Error in chat session: {str(e)}")
+        st.info("Try refreshing the page or going back to the previous screen.")
 
     st.divider()
     if st.button("End session & get feedback", type="primary"):
@@ -262,24 +287,34 @@ def screen_training_session():
 # --------------------------- Screen: Feedback ---------------------------
 
 async def generate_feedback() -> str:
-    transcript = format_history(markdown=False)
-    prompt = (
-        "You are a senior CBT supervisor. A trainee therapist just finished the following role‑play with a simulated patient.\n"
-        "Your task:\n"
-        "1. Provide a concise summary of the session (2‑3 sentences).\n"
-        "2. Evaluate how well the therapist adhered to CBT best practices (Socratic questioning, collaborative empiricism, cognitive restructuring, behavioural experiments, homework, etc.).\n"
-        "3. Point out at least three strengths with quoted examples.\n"
-        "4. Point out at least three improvement areas with specific, actionable suggestions and example language.\n"
-        "5. Give an overall rating out of 10.\n\n"
-        f"Transcript:\n{transcript}"
-    )
+    try:
+        # Get a fresh client for this API call
+        fresh_client = get_openai_client()
+        
+        transcript = format_history(markdown=False)
+        prompt = (
+            "You are a senior CBT supervisor. A trainee therapist just finished the following role‑play with a simulated patient.\n"
+            "Your task:\n"
+            "1. Provide a concise summary of the session (2‑3 sentences).\n"
+            "2. Evaluate how well the therapist adhered to CBT best practices (Socratic questioning, collaborative empiricism, cognitive restructuring, behavioural experiments, homework, etc.).\n"
+            "3. Point out at least three strengths with quoted examples.\n"
+            "4. Point out at least three improvement areas with specific, actionable suggestions and example language.\n"
+            "5. Give an overall rating out of 10.\n\n"
+            f"Transcript:\n{transcript}"
+        )
 
-    resp = await client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "system", "content": prompt}],
-        stream=False,
-    )
-    return resp.choices[0].message.content
+        resp = await fresh_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "system", "content": prompt}],
+            stream=False,
+        )
+        return resp.choices[0].message.content
+    except Exception as e:
+        error_msg = str(e)
+        st.error("Error generating feedback. Please try again later.")
+        # Log the full error for debugging
+        print(f"OpenAI API Error during feedback: {error_msg}")
+        return "Unable to generate feedback due to an API error. Please try again or contact the app administrator."
 
 
 def screen_feedback():
@@ -288,7 +323,11 @@ def screen_feedback():
 
     if st.session_state.feedback is None:
         with st.spinner("Analyzing session ..."):
-            st.session_state.feedback = asyncio.run(generate_feedback())
+            try:
+                st.session_state.feedback = asyncio.run(generate_feedback())
+            except Exception as e:
+                st.error(f"Error generating feedback: {str(e)}")
+                st.session_state.feedback = "Unable to generate feedback due to an error. Please try again."
     st.markdown(st.session_state.feedback)
 
     st.divider()
