@@ -221,16 +221,29 @@ async def get_assistant_response(system_prompt: str):
         # Get a fresh client for this API call
         fresh_client = get_openai_client()
         
-        resp = await fresh_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "system", "content": system_prompt}] + st.session_state.history,
-            stream=False,
-        )
-        return resp.choices[0].message.content
+        # Add more robust error handling and logging
+        try:
+            resp = await fresh_client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "system", "content": system_prompt}] + st.session_state.history,
+                stream=False,
+                timeout=60,  # Add timeout to prevent hanging
+            )
+            return resp.choices[0].message.content
+        except Exception as api_error:
+            error_msg = str(api_error)
+            print(f"Detailed OpenAI API Error: {error_msg}")
+            
+            # Check for specific error types
+            if "InternalServerError" in error_msg:
+                return "I'm sorry, OpenAI's servers are experiencing issues right now. Please try again in a few moments."
+            elif "timeout" in error_msg.lower():
+                return "The request timed out. The OpenAI service might be experiencing high traffic. Please try again."
+            else:
+                return "I'm sorry, there was an error connecting to the AI service. Please try again or contact the app administrator."
     except Exception as e:
         error_msg = str(e)
         st.error(f"OpenAI API Error: {error_msg}")
-        # Log the full error for debugging (only visible in Streamlit logs)
         print(f"OpenAI API Error: {error_msg}")
         return "I'm sorry, there was an error connecting to the AI service. Please try again or contact the app administrator."
 
@@ -278,6 +291,7 @@ def screen_training_session():
     except Exception as e:
         st.error(f"Error in chat session: {str(e)}")
         st.info("Try refreshing the page or going back to the previous screen.")
+        print(f"Detailed error in chat session: {str(e)}")  # Add more detailed logging
 
     st.divider()
     if st.button("End session & get feedback", type="primary"):
@@ -303,16 +317,27 @@ async def generate_feedback() -> str:
             f"Transcript:\n{transcript}"
         )
 
-        resp = await fresh_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "system", "content": prompt}],
-            stream=False,
-        )
-        return resp.choices[0].message.content
+        try:
+            # Try with gpt-4o-mini first
+            resp = await fresh_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "system", "content": prompt}],
+                stream=False,
+                timeout=60,  # Add timeout
+            )
+            return resp.choices[0].message.content
+        except Exception as model_error:
+            # If gpt-4o-mini fails, try with gpt-3.5-turbo as fallback
+            print(f"Error with gpt-4o-mini: {str(model_error)}. Trying fallback model.")
+            resp = await fresh_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "system", "content": prompt}],
+                stream=False,
+                timeout=60,
+            )
+            return resp.choices[0].message.content
     except Exception as e:
         error_msg = str(e)
-        st.error("Error generating feedback. Please try again later.")
-        # Log the full error for debugging
         print(f"OpenAI API Error during feedback: {error_msg}")
         return "Unable to generate feedback due to an API error. Please try again or contact the app administrator."
 
