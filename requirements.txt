@@ -1,12 +1,6 @@
 streamlit>=1.30.0
 openai>=1.12.0
 python-dotenv>=1.0.0
-streamlit-webrtc>=0.47.1
 numpy>=1.24.0
-websockets>=11.0.3
-flask>=2.0.0
-flask-cors>=3.0.10
 requests>=2.25.0
-deepgram-sdk
-simple-websocket-server
-gradio
+httpx>=0.25.0
